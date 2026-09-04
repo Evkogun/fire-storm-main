@@ -5,6 +5,9 @@
 
 #include "sniff.h"
 
+// NON FUNCTIONAL
+
+
 // Command line options
 #define OPTSTRING "vi:"
 static struct option long_opts[] = {

@@ -10,108 +10,80 @@
 #include <netinet/tcp.h>
 #include <signal.h>
 
-pcap_t *pcap_handle = NULL;
+#include <sys/socket.h>
+#include <linux/if_ether.h>
+#include <linux/if_packet.h>
+#include <net/if.h>
 
-void handle_sigint(int sig) {
-  if (pcap_handle != NULL) {
-    pcap_breakloop(pcap_handle);
-  }
-}
+#include <string.h>
+#include <unistd.h>
 
-
-// Method for receiving shutdown signal from sigint in dispatch
-void sub_handle_sigint() {
-    if (pcap_handle != NULL) {
-        pcap_breakloop(pcap_handle);  // Interrupt pcap_loop
-    }
-}
-
-// Function that is called in the pcap loop, based of off original while loop
-void packet_handler(unsigned char *user_data, const struct pcap_pkthdr *header, const unsigned char *packet) {
-  dump(packet, header->len);
-}
+const int PORT = 5733; // Port to sniff on,
 
 // Main sniffing loop
 void sniff(char *interface, int verbose) {
-  char errbuf[PCAP_ERRBUF_SIZE];
 
-  // Open the specified network interface for packet capture
-  pcap_handle = pcap_open_live(interface, 4096, 1, 1000, errbuf);
-  if (pcap_handle == NULL) {
-      fprintf(stderr, "Unable to open interface %s\n", errbuf);
-      exit(EXIT_FAILURE);
-  } else {
-      printf("SUCCESS! Opened %s for capture\n", interface);
+  int raw_socket = socket(AF_INET, SOCK_STREAM, 0);
+  if (raw_socket < 0) {
+    perror("socket"); // Error creating raw socket
+    exit(EXIT_FAILURE);
+  }
+  
+  int opt = 1;
+  int setsockopt_result = setsockopt(raw_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+  if (setsockopt_result < 0) {
+    perror("setsockopt"); // Another check
+    exit(EXIT_FAILURE);
   }
 
-  char filter_exp[] = "tcp port 5733";
+  // sockaddr_in chosen for TCP
+  struct sockaddr_in servaddr;
+  memset(&servaddr, 0, sizeof(servaddr));
+  servaddr.sin_family = AF_INET;
+  servaddr.sin_port = htons(PORT);
+  servaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+  socklen_t addrlen = sizeof(servaddr);
 
-  struct bpf_program fp;
-  pcap_compile(pcap_handle, &fp, filter_exp, 0, PCAP_NETMASK_UNKNOWN); // Must be filtered before pcap_loop is called
-  pcap_setfilter(pcap_handle, &fp);
-  pcap_freecode(&fp);
+  int bind_result = bind(raw_socket, (struct sockaddr *)&servaddr, sizeof(servaddr)); // Casting is good practice
+  if (bind_result < 0) {
+    perror("bind"); // Error binding
+    exit(EXIT_FAILURE);
+  }
 
-  signal(SIGINT, handle_sigint);
+  int listen_result = listen(raw_socket, 5);
+  if (listen_result < 0) {
+    perror("listen"); // More checks
+    exit(EXIT_FAILURE);
+  }
 
-  // Begin capturing packets
-  pcap_loop(pcap_handle, 0, packet_handler, NULL);
+  // Creates a dedicated peer socket for the client connection
+  int client_sock = accept(raw_socket, (struct sockaddr *)&servaddr, &addrlen);
+  if (client_sock < 0) {
+    perror("accept");
+    exit(EXIT_FAILURE);
+  }
+  
+  unsigned char buffer[65536]; // Buffer to hold incoming packets
+  ssize_t bytes_read;
 
-  // Cleanup for when pcap stops
-  pcap_close(pcap_handle);
+  while ((bytes_read = recv(client_sock, buffer, sizeof(buffer), 0)) > 0) {
+    dump(buffer, bytes_read);
+  }
+
+  // Cleanup
+  close(raw_socket);
+  close(client_sock);
   printf("\nCapture stopped\n");
 }
 
 // Utility/Debugging method for dumping raw packet data
 void dump(const unsigned char *data, int length) {
-  unsigned int i;
   static unsigned long pcount = 0;
-  // Decode Packet Header
-  struct ether_header *eth_header = (struct ether_header *) data;
-  printf("\n\n === PACKET %ld HEADER ===", pcount);
-  printf("\nSource MAC: ");
-  for (i = 0; i < 6; ++i) {
-    printf("%02x", eth_header->ether_shost[i]);
-    if (i < 5) {
-      printf(":");
-    }
+  printf("\n=== PACKET %lu (%d bytes) ===\n", pcount++, length);
+  
+  for (int i = 0; i < length; i++) {
+    printf("%02x ", data[i]);
+    if ((i + 1) % 16 == 0) printf("\n");
   }
-  printf("\nDestination MAC: ");
-  for (i = 0; i < 6; ++i) {
-    printf("%02x", eth_header->ether_dhost[i]);
-    if (i < 5) {
-      printf(":");
-    }
-  }
-  printf("\nType: %hu\n", eth_header->ether_type);
-  printf(" === PACKET %ld DATA == \n", pcount);
-  // Decode Packet Data (Skipping over the header)
-  int data_bytes = length - ETH_HLEN;
-  const unsigned char *payload = data + ETH_HLEN;
-  const static int output_sz = 20; // Output this many bytes at a time
-  while (data_bytes > 0) {
-    int output_bytes = data_bytes < output_sz ? data_bytes : output_sz;
-    // Print data in raw hexadecimal form
-    for (i = 0; i < output_sz; ++i) {
-      if (i < output_bytes) {
-        printf("%02x ", payload[i]);
-      } else {
-        printf ("   "); // Maintain padding for partial lines
-      }
-    }
-    printf ("| ");
-    // Print data in ascii form
-    for (i = 0; i < output_bytes; ++i) {
-      char byte = payload[i];
-      if (byte > 31 && byte < 127) {
-        // Byte is in printable ascii range
-        printf("%c", byte);
-      } else {
-        printf(".");
-      }
-    }
-    printf("\n");
-    payload += output_bytes;
-    data_bytes -= output_bytes;
-  }
-  pcount++;
+  printf("\n");
 }
