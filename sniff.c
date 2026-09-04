@@ -5,22 +5,21 @@
 #include <pcap.h>
 #include <netinet/if_ether.h>
 #include <netinet/in.h>
-
-#include "dispatch.h"
 #include <arpa/inet.h>
 #include <netinet/ip.h>
 #include <netinet/tcp.h>
 #include <signal.h>
-#include "uthash.h"
 
 pcap_t *pcap_handle = NULL;
 
-void initialise();
-void handle_sigint();
-void sub_sub_handle_sigint();
+void handle_sigint(int sig) {
+  if (pcap_handle != NULL) {
+    pcap_breakloop(pcap_handle);
+  }
+}
 
 
-// Method for recieveing shutdown signal from sigint in dispatch
+// Method for receiving shutdown signal from sigint in dispatch
 void sub_handle_sigint() {
     if (pcap_handle != NULL) {
         pcap_breakloop(pcap_handle);  // Interrupt pcap_loop
@@ -29,14 +28,7 @@ void sub_handle_sigint() {
 
 // Function that is called in the pcap loop, based of off original while loop
 void packet_handler(unsigned char *user_data, const struct pcap_pkthdr *header, const unsigned char *packet) {
-    int verbose = *(int *)user_data;  // Retrieve verbose flag 
-
-    // Dump raw packet to terminal
-    if (verbose) {
-        dump(packet, header->len);
-    }
-
-    dispatch(header, packet, verbose);
+  dump(packet, header->len);
 }
 
 // Main sniffing loop
@@ -52,16 +44,21 @@ void sniff(char *interface, int verbose) {
       printf("SUCCESS! Opened %s for capture\n", interface);
   }
 
-  // Initialize queue
-  initialise();
+  char filter_exp[] = "tcp port 5733";
+
+  struct bpf_program fp;
+  pcap_compile(pcap_handle, &fp, filter_exp, 0, PCAP_NETMASK_UNKNOWN); // Must be filtered before pcap_loop is called
+  pcap_setfilter(pcap_handle, &fp);
+  pcap_freecode(&fp);
+
   signal(SIGINT, handle_sigint);
 
   // Begin capturing packets
-  pcap_loop(pcap_handle, 0, packet_handler, (unsigned char *)&verbose);
+  pcap_loop(pcap_handle, 0, packet_handler, NULL);
 
   // Cleanup for when pcap stops
   pcap_close(pcap_handle);
-  sub_sub_handle_sigint();
+  printf("\nCapture stopped\n");
 }
 
 // Utility/Debugging method for dumping raw packet data

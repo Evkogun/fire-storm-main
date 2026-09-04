@@ -4,7 +4,6 @@
 #include <getopt.h>
 
 #include "sniff.h"
-#include "dispatch.h"
 
 // Command line options
 #define OPTSTRING "vi:"

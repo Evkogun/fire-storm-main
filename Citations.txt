@@ -1,0 +1,6 @@
+https://share.gemini.google/b8o0GlGLcjBy
+
+https://github.com/Evkogun/CS241-Coursework/tree/main/cs241/skeleton/src
+
+sudo apt update
+sudo apt install -y libpcap-dev build-essential
