@@ -21,7 +21,7 @@
 const int PORT = 5733; // Port to sniff on,
 
 // Main sniffing loop
-void sniff(char *interface, int verbose) {
+void sniff(int verbose) {
 
   int raw_socket = socket(AF_INET, SOCK_STREAM, 0);
   if (raw_socket < 0) {
@@ -67,7 +67,7 @@ void sniff(char *interface, int verbose) {
   ssize_t bytes_read;
 
   while ((bytes_read = recv(client_sock, buffer, sizeof(buffer), 0)) > 0) {
-    dump(buffer, bytes_read);
+    dump(buffer, bytes_read, verbose);
   }
 
   // Cleanup
@@ -77,9 +77,11 @@ void sniff(char *interface, int verbose) {
 }
 
 // Utility/Debugging method for dumping raw packet data
-void dump(const unsigned char *data, int length) {
+void dump(const unsigned char *data, int length, int dumpvb) {
   static unsigned long pcount = 0;
-  printf("\n=== PACKET %lu (%d bytes) ===\n", pcount++, length);
+  if (dumpvb){
+    printf("\n=== PACKET %lu (%d bytes) ===\n", pcount++, length);
+  }
   
   for (int i = 0; i < length; i++) {
     printf("%02x ", data[i]);
