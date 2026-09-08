@@ -131,7 +131,11 @@ Length is 512, header structure confirmed
 Since we know the general header structure what we could do is filter out the known
 headers and see what we're left with
 
+Multithreading is implied to be prefered in the solution
 
+To set up for this we must create a hashmap to allow dynamic task allocation
+
+I will also import my previous Multithreading implementation
 
 
 
