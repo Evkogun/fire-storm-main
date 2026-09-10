@@ -29,6 +29,7 @@ void enqueue(Queue *queue, Task task) {
 }
 
 // Remove a task from the queue
+// No safety here, gotta be careful
 Task dequeue(Queue *queue) {
     pthread_mutex_lock(&queue->lock);
 

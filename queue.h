@@ -1,13 +1,12 @@
 #ifndef CS241_QUEUE_H
 #define CS241_QUEUE_H
 
-#include <pthread.h>
 #include <pcap.h>
+#include <pthread.h>
 
 typedef struct Task {
-    struct pcap_pkthdr *header;
-    unsigned char *packet;
-    int verbose;
+    int offset;
+    int length;
 } Task;
 
 typedef struct Queue {

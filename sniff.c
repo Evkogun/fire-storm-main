@@ -1,6 +1,6 @@
 #include "sniff.h"
 #include "find_packet.h"
-#include "uthash.h"
+#include "queue.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,12 +9,13 @@
 #include <sys/socket.h>
 #include <string.h>
 #include <unistd.h>
+#include <pthread.h>
 
 
 const int PORT = 5733; // Port to sniff on,
 
 // Main sniffing loop
-void sniff(int verbose) {
+void sniff(int flag, int verbose) {
 
   int socket_descriptor = socket(AF_INET, SOCK_STREAM, 0);
   if (socket_descriptor < 0) {
@@ -55,15 +56,38 @@ void sniff(int verbose) {
     perror("accept");
     exit(EXIT_FAILURE);
   }
+
+  Queue *queue = create_queue(100);
+
+  struct Task task;
+
+  task.offset = 0;
+  task.length = 0;
   
   unsigned char buffer[65536]; // Buffer to hold incoming packets
+  unsigned char packet_buffer[8192]; // Buffer to hold individual packets
   ssize_t bytes_read;
+  int buffer_index = 0;
   int sum_filtered = 0;
-  struct packet *packet_map = NULL; // Hash table for storing packets
 
-  while ((bytes_read = recv(client_sock, buffer, sizeof(buffer), 0)) > 0) {
-    sum_filtered += find_packet(buffer, bytes_read, &packet_map);
-    dump(buffer, bytes_read, verbose);
+  struct args_find_packet args = {
+    .buffer = buffer,
+    .bytes_read = 0,
+    .flag = flag,
+    .queue = queue,
+  };
+
+  pthread_t thread;
+  pthread_create(&thread, NULL, find_packet_thread, &args);
+
+  while ((bytes_read = recv(client_sock, packet_buffer, sizeof(packet_buffer), 0)) > 0) {
+    
+    task.offset = buffer_index;
+    task.length = bytes_read;
+    enqueue(queue, task);
+
+    dump(packet_buffer, bytes_read, verbose);
+    buffer_index += bytes_read; // Type conversion should be safe for this task
   }
 
   if (bytes_read < 0) {
@@ -80,13 +104,15 @@ void sniff(int verbose) {
 // Utility/Debugging method for dumping raw packet data
 void dump(unsigned char *data, int length, int dumpvb) {
   static unsigned long pcount = 0;
-  if (dumpvb){
-    printf("\n=== PACKET %lu (%d bytes) ===\n", pcount++, length);
-  }
   
-  for (int i = 0; i < length; i++) {
-    printf("%02x ", data[i]);
-    if ((i + 1) % 16 == 0) printf("\n");
+  printf("\n=== PACKET %lu (%d bytes) ===\n", pcount++, length);
+  
+  if (dumpvb){
+    for (int i = 0; i < length; i++) {
+      printf("%02x ", data[i]);
+      if ((i + 1) % 16 == 0) printf("\n");
+    }
   }
+
   printf("\n");
 }

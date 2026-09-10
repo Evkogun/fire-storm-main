@@ -138,10 +138,40 @@ To set up for this we must create a hashmap to allow dynamic task allocation
 I will also import my previous Multithreading implementation
 
 
+My underlying packet printing logic was merging packets into massive groups due to 
+being bottlenecked by the extreme verbose logic
 
+I'm assuming this is because of the data accumilating in the TCP buffer, anyway this 
+is a lot easier to work with
 
+My logic was based off of these large concrete TCP sctreams, however the new divisions
+need to be accounted for, this and non-unique sequence numbers
 
+Need to decide is we take the most recent unique sequence number, or the first recieved
+Recent is better however it could mean there will be issues in threading logic, especially
+if its a different size
 
+Because of difficulties with navigating the console and deciding between hex vs ASCII in viewing
+I have decided to use wireshark
+
+The packets are fortunately completely in order
+
+Thankfully wireshark overcomplicates it, I only need to look at the actualy data not any of 
+the internal headers
+
+Non CTFS traffic doesn't need to be reconstructred unless it has a chunk taken out of it by
+previous CTFS traffic
+
+Since Multithreading most likely won't be implemented I will probably switch out the hash for a list
+
+Single queue system for tasks
+
+To solve the issue of data overerlap I can store the raw data in 1 bit file, that way I can store 
+offsets in the queue, making handing data that overlaps between queued tasks a lot easier.
+
+I can literally just add the offset to the next queued task and there's no issue
+
+Having a seperate queue for sending and recieving would fix the merging issue...
 
 RAW PACKET 4
 
