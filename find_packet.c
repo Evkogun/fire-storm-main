@@ -1,11 +1,12 @@
 #include "find_packet.h"
+#include "queue.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
 
-int matches_pattern(const unsigned char *buffer, int i) {
+int matches_pattern(const unsigned char *buffer, size_t i) {
     static const unsigned char pattern[] = "CTFS"; // CTFS, also prevents re-creation
 
     for (int j = 0; j < 4; j++) {
@@ -16,75 +17,93 @@ int matches_pattern(const unsigned char *buffer, int i) {
 }
 
 // Creates a new packet structure
-struct packet *create_packet(unsigned char *data, uint16_t sequence_int, int index, uint16_t data_length) {
-    struct packet *new_packet = malloc(sizeof(*new_packet));
+struct Task *create_task(uint16_t sequence_int, size_t buffer_index, size_t length) {
+    struct Task *new_task = malloc(sizeof(Task));
 
-    if (!new_packet) {
+    if (!new_task) {
         perror("Failed to allocate memory for new packet");
         exit(EXIT_FAILURE);
     }
 
-    new_packet->data = malloc(data_length); // Since we don't know how long data
-    // will be until we read the lendth, we allocate it here
-
-    new_packet->sequence_number = sequence_int;
-    new_packet->length_data = data_length;
-    new_packet->index = index;
-
-    if (data_length > 0) {
-        if (!new_packet->data) {
-            perror("Failed to allocate memory for packet data");
-            free(new_packet);
-            exit(EXIT_FAILURE);
-        }
-        memcpy(new_packet->data, &data[index + 16], data_length);
-    } 
+    new_task->sequence_number = sequence_int;
+    new_task->offset = buffer_index;
+    new_task->length = length;
     
-    return new_packet;
+    return new_task;
 }
 
 
 // wrapper made to satify pthread_create's function signature
 void *find_packet_thread(void *arg) {
-    struct args_find_packet *args = (struct args_find_packet *)arg;
-    int sum_filtered = find_packet(args->buffer, args->bytes_read, args->queue);
+    struct args_find_packet *args = arg;
+    int sum_filtered = find_packet(args->buffer, args->r_queue, args->n_op_queue, args->op_queue);
     printf("\nTotal packets filtered: %d\n", sum_filtered);
     return NULL;
 }
 
 
-int find_packet(unsigned char *buffer, int bytes_read, Queue *queue) {
+int find_packet(unsigned char *buffer, Queue *r_queue, Queue *n_op_queue, Queue *op_queue) {
     // This function will change, currently it filters out CTFS packets
-    Task old_task;
-    if (task != NULL) {
-        old_task = *task;
-    } else {
-        old_task.offset = 0;
-        old_task.length = bytes_read;
-    }
-    Task task = dequeue(queue);
-    int sum_detected = 0;
-    
-    for (int i = task.offset; i <= task.offset + task.length - 1; i += 1) { // Prevent out-of-bounds access
-        if (buffer[i] == 0x43 && matches_pattern(buffer, i)) {
+    static size_t buffer_spill_offset = 0;
 
-            if (i + 16 > bytes_read){ // Header exists?
+    Task *task = dequeue(r_queue);
+    int sum_detected = 0;
+    size_t start = task->offset - buffer_spill_offset; // Seperated to keep for from being too long
+    size_t end = task->offset + task->length; // Allows consideration of buffer_spill_offset in out of bounds calculation
+
+    buffer_spill_offset = 0;
+    
+    for (size_t i = start; i < end; i++) { // Prevent out-of-bounds access
+        if (buffer[i] == 0x43) {
+
+            if (i + 16 > end){ // If header is split across 2 packets
+                buffer_spill_offset = end - i;
                 break;
             }
-            // Converts two raw bytes into single 16 bit integer
-            uint16_t key = ((uint16_t)buffer[i + 4] << 8) | buffer[i + 5]; // Love low level languages, 
-            uint16_t data_length = ((uint16_t)buffer[i + 6] << 8) | buffer[i + 7]; // Declared here since it is used in skip logic
 
-            if (i + 16 + data_length > bytes_read){
+            if (!matches_pattern(buffer, i)){
+                continue;
+            }
+
+            // Converts two raw bytes into single 16 bit integer
+            uint16_t sequence_number = ((uint16_t)buffer[i + 4] << 8) | buffer[i + 5]; // Love low level languages, 
+            size_t data_length = ((size_t)buffer[i + 6] << 8) | buffer[i + 7]; // Declared here since it is used in skip logic
+
+            if (i + 16 + data_length > end){ // If data is split across 2 packets
+                buffer_spill_offset = end - i;
                 break;
             }
             
-            struct packet *new_packet = create_packet(buffer, key, i, data_length);
+            struct Task *new_task = create_task(sequence_number, i, data_length);
+            enqueue(op_queue, new_task);
 
             sum_detected++;
             i += data_length + 15; // header size + data
         }
+        else if (buffer[i] == 0x08 && i >= 12){ // Protection for fetching headers
+
+            if (i + 6 > end){ // If header length field split or in next packet
+                buffer_spill_offset = end - i;
+                break;
+            }
+
+            if (buffer[i + 1] != 0x00 || buffer[i + 2] != 0x45){
+                continue;
+            }
+
+            size_t data_length = ((uint16_t)buffer[i + 4] << 8) | (uint16_t)buffer[i + 5];
+    
+            if (i + 2 + data_length > end){ // If header length field split or in next packet
+                buffer_spill_offset = end - i;
+                break;
+            }
+
+            struct Task *new_task = create_task(0, i - 12, data_length + 14); // 14 for the header
+            enqueue(n_op_queue, new_task);
+            i += data_length + 1; // Iteration through data
+        }
     }
+    free(task);
     return sum_detected;
 }
 

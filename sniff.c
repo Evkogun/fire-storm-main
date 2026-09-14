@@ -57,12 +57,9 @@ void sniff(int flag, int verbose) {
     exit(EXIT_FAILURE);
   }
 
-  Queue *queue = create_queue(100);
-
-  struct Task task;
-
-  task.offset = 0;
-  task.length = 0;
+  Queue *raw_queue = create_queue(100);
+  Queue *non_operational_queue = create_queue(100);
+  Queue *ctfs_queue = create_queue(100);
   
   unsigned char buffer[65536]; // Buffer to hold incoming packets
   unsigned char packet_buffer[8192]; // Buffer to hold individual packets
@@ -72,9 +69,10 @@ void sniff(int flag, int verbose) {
 
   struct args_find_packet args = {
     .buffer = buffer,
-    .bytes_read = 0,
     .flag = flag,
-    .queue = queue,
+    .r_queue = raw_queue,
+    .n_op_queue = non_operational_queue,
+    .op_queue = ctfs_queue
   };
 
   pthread_t thread;
@@ -82,9 +80,9 @@ void sniff(int flag, int verbose) {
 
   while ((bytes_read = recv(client_sock, packet_buffer, sizeof(packet_buffer), 0)) > 0) {
     
-    task.offset = buffer_index;
-    task.length = bytes_read;
-    enqueue(queue, task);
+    memcpy(buffer + buffer_index, packet_buffer, (size_t)bytes_read);
+    Task *task = create_task(0, buffer_index, (size_t)bytes_read);
+    enqueue(raw_queue, task);
 
     dump(packet_buffer, bytes_read, verbose);
     buffer_index += bytes_read; // Type conversion should be safe for this task

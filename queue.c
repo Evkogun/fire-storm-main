@@ -2,18 +2,33 @@
 #include <stdlib.h>
 
 // Create a queue
+
 Queue *create_queue(int capacity) {
-    Queue *queue = (Queue *)malloc(sizeof(Queue));
-    queue->tasks = (Task *)malloc(sizeof(Task) * capacity);
-    queue->front = queue->rear = queue->size = 0;
+    Queue *queue = malloc(sizeof *queue);
+
+    if (!queue)
+        return NULL;
+
+    queue->tasks = malloc(sizeof *queue->tasks * capacity);
+
+    if (!queue->tasks) {
+        free(queue);
+        return NULL;
+    }
+
+    queue->front = 0;
+    queue->rear = 0;
+    queue->size = 0;
     queue->capacity = capacity;
+
     pthread_mutex_init(&queue->lock, NULL);
     pthread_cond_init(&queue->cond, NULL);
+
     return queue;
 }
 
 // Add a task to the queue
-void enqueue(Queue *queue, Task task) {
+void enqueue(Queue *queue, Task *task) {
     pthread_mutex_lock(&queue->lock);
 
     while (queue->size == queue->capacity) {
@@ -30,14 +45,14 @@ void enqueue(Queue *queue, Task task) {
 
 // Remove a task from the queue
 // No safety here, gotta be careful
-Task dequeue(Queue *queue) {
+Task *dequeue(Queue *queue) {
     pthread_mutex_lock(&queue->lock);
 
     while (queue->size == 0) {
         pthread_cond_wait(&queue->cond, &queue->lock);
     }
 
-    Task task = queue->tasks[queue->front];
+    Task *task = queue->tasks[queue->front];
     queue->front = (queue->front + 1) % queue->capacity;
     queue->size--;
 

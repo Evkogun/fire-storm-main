@@ -173,6 +173,15 @@ I can literally just add the offset to the next queued task and there's no issue
 
 Having a seperate queue for sending and recieving would fix the merging issue...
 
+I could create 2 seperate queues or add a variable for the port destination, this really depends on 
+whether I want to send the packets before fully processing them
+
+Since the PDF packets may be out of order I should avoid sending them as I get them, however there'S
+no reason not to just forward the non prio traffic as I get it
+
+All other packets appear to be TCP, we will classify and apply the same reconstruction logic to them, 
+but they will not be re-ordered
+
 RAW PACKET 4
 
 00 1a a0 91 7f 6f 00 1c 14 a8 cc ef 08 00 45 00 

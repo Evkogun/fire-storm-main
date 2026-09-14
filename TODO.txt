@@ -1,7 +1,11 @@
-Finish queue logic
+Task.length - Identity crisis variable
 
-End task flag
+Finish find_packet logic
 
-multi packet data
+Make thread logic last more than 1 loop
 
-sending packets away (out this in find packets or sniff?)
+Add another thread for sending, probably not?
+
+Check if any data is left unaccounted for
+
+Add pthread shutdown

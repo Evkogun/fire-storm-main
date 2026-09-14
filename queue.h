@@ -5,12 +5,13 @@
 #include <pthread.h>
 
 typedef struct Task {
-    int offset;
-    int length;
+    uint16_t sequence_number;
+    size_t offset;
+    size_t length;
 } Task;
 
 typedef struct Queue {
-    Task *tasks;
+    Task **tasks;
     int front, rear, size, capacity;
     pthread_mutex_t lock;
     pthread_cond_t cond;
@@ -18,8 +19,8 @@ typedef struct Queue {
 
 // Function prototypes
 Queue *create_queue(int capacity);
-void enqueue(Queue *queue, Task task);
-Task dequeue(Queue *queue);
+void enqueue(Queue *queue, Task *task);
+Task *dequeue(Queue *queue);
 void free_queue_q(Queue *queue);
 
 // temp
